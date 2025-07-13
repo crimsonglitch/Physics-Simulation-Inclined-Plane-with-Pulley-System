@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Physics Simulation</title>
+    <style>
+        body {
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            background-color: #f0f0f0;
+        }
+
+        .ramp {
+            position: relative;
+            width: 660px;
+            height: 200px;
+            background-color: #f0f0f0;
+        }
+
+        #combinedShape {
+            position: absolute;
+            width: 400px;
+            height: 200px;
+            right: 0;
+            top: 0;
+        }
+
+        #newTriangle {
+            width: 0;
+            height: 0;
+            border-left: 200px solid transparent;
+            border-bottom: 200px solid black;
+            transform: rotate(90deg);
+            position: absolute;
+            right: 0;
+            top: 0;
+        }
+
+        #newSquare {
+            width: 200px;
+            height: 200px;
+            background-color: black;
+            position: absolute;
+            left: 0;
+            top: 0;
+        }
+
+        .pulley {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            border: 2px solid black;
+            background-color: lightgray;
+            position: absolute;
+            left: 180px;
+            top: -20px;
+            cursor: default;
+        }
+
+        .rope {
+            position: absolute;
+            height: 2px;
+            background-color: green;
+            transform-origin: 0 0;
+            z-index: -0.5;
+        }
+
+        .draggable {
+            width: 60px;
+            height: 60px;
+            position: absolute;
+            cursor: default;
+        }
+
+        .load {
+            background-color: red;
+            left: 100px;
+            top: 100px;
+        }
+
+        .object {
+            background-color: blue;
+            left: 400px;
+            top: 100px;
+        }
+
+        #startButton,
+        #stopButton {
+            margin: 10px;
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+
+        /* Remove speed adjustment slider */
+        input[type="range"] {
+            display: inline-block;
+            vertical-align: middle;
+            margin-left: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <button id="startButton" onclick="startSimulation()">Start</button>
+    <button id="stopButton" onclick="stopSimulation()">Stop</button>
+
+    <label for="loadSizeRange">Load Size: </label>
+    <input id="loadSizeRange" type="range" min="60" max="120" step="1" value="120" oninput="resizeObject(this.value, 'load')">
+    <label for="objectSizeRange">Object Size: </label>
+    <input id="objectSizeRange" type="range" min="60" max="120" step="1" value="120" oninput="resizeObject(this.value, 'object')">
+
+    <div class="ramp">
+        <div id="combinedShape">
+            <div id="newTriangle"></div>
+            <div id="newSquare"></div>
+            <div class="pulley"></div>
+        </div>
+    </div>
+    <div class="rope" id="ropeLoad"></div>
+    <div class="rope" id="ropeObject"></div>
+    <div class="load draggable" draggable="true"></div>
+    <div class="object draggable" draggable="true"></div>
+
+    <button id="capture">Capture Screenshot</button>
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.js"></script>
+    <script>
+        function captureScreen() {
+            html2canvas(document.body).then(function (canvas) {
+                const img = canvas.toDataURL("image/png");
+                const a = document.createElement("a");
+                a.href = img;
+                a.download = "screenshot.png";
+                a.click();
+            });
+        }
+
+        const captureButton = document.getElementById("capture");
+        captureButton.addEventListener("click", captureScreen);
+
+        let startX, startY, selectedElement, isRunning = false;
+        let intervalId;
+
+        function handleMouseDown(e) {
+            selectedElement = e.target;
+            startX = e.clientX - selectedElement.getBoundingClientRect().left;
+            startY = e.clientY - selectedElement.getBoundingClientRect().top;
+            isRunning = true;
+        }
+
+        function handleTouchStart(e) {
+            selectedElement = e.target;
+            startX = e.touches[0].clientX - selectedElement.getBoundingClientRect().left;
+            startY = e.touches[0].clientY - selectedElement.getBoundingClientRect().top;
+            isRunning = true;
+        }
+
+        function handleMouseMove(e) {
+            if (selectedElement && isRunning) {
+                selectedElement.style.left = e.clientX - startX + 'px';
+                selectedElement.style.top = e.clientY - startY + 'px';
+                updateRopePositions();
+            }
+        }
+
+        function handleTouchMove(e) {
+            if (selectedElement && isRunning) {
+                selectedElement.style.left = e.touches[0].clientX - startX + 'px';
+                selectedElement.style.top = e.touches[0].clientY - startY + 'px';
+                updateRopePositions();
+            }
+        }
+
+        function handleMouseUp() {
+            selectedElement = null;
+            isRunning = false;
+        }
+
+        document.querySelectorAll('.draggable').forEach(element => {
+            element.addEventListener('mousedown', handleMouseDown);
+            element.addEventListener('touchstart', handleTouchStart);
+        });
+
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('touchmove', handleTouchMove);
+        document.addEventListener('mouseup', handleMouseUp);
+        document.addEventListener('touchend', handleMouseUp);
+
+        const ramp = document.querySelector('.ramp');
+        const ropeLoad = document.getElementById('ropeLoad');
+        const ropeObject = document.getElementById('ropeObject');
+        const pulley = document.querySelector('.pulley');
+        const load = document.querySelector('.load');
+        const object = document.querySelector('.object');
+
+        let initialRotation = true; // For initial rotation of 30 degrees
+
+        function updateRopePositions() {
+            const pulleyX = pulley.getBoundingClientRect().left + pulley.clientWidth / 2;
+            const pulleyY = pulley.getBoundingClientRect().top + pulley.clientHeight / 2;
+
+            const loadX = load.getBoundingClientRect().left + load.clientWidth / 2;
+            const loadY = load.getBoundingClientRect().top + load.clientHeight / 2;
+
+            const objectX = object.getBoundingClientRect().left + object.clientWidth / 2;
+            const objectY = object.getBoundingClientRect().top + object.clientHeight / 2;
+
+            const angleLoad = Math.atan2(loadY - pulleyY, loadX - pulleyX);
+            const angleObject = Math.atan2(objectY - pulleyY, objectX - pulleyX);
+
+            const distanceLoad = Math.sqrt((loadX - pulleyX) ** 2 + (loadY - pulleyY) ** 2);
+            const distanceObject = Math.sqrt((objectX - pulleyX) ** 2 + (objectY - pulleyY) ** 2);
+
+            ropeLoad.style.width = distanceLoad + 'px';
+            ropeObject.style.width = distanceObject + 'px';
+
+            ropeLoad.style.transform = `rotate(${angleLoad}rad)`;
+            ropeLoad.style.left = pulleyX + 'px';
+            ropeLoad.style.top = pulleyY + 'px';
+
+            ropeObject.style.transform = `rotate(${angleObject}rad)`;
+            ropeObject.style.left = pulleyX + 'px';
+            ropeObject.style.top = pulleyY + 'px';
+
+            if (initialRotation) {
+                load.style.transform = `rotate(${angleLoad + Math.PI / 6}rad)`; // 30 degrees
+                initialRotation = false;
+            }
+        }
+
+        function moveComponents(offsetX, offsetY) {
+            const elements = [load, object];
+
+            intervalId = setInterval(() => {
+                elements.forEach(element => {
+                    const rect = element.getBoundingClientRect();
+                    const collision = isColliding(rect, ramp.getBoundingClientRect());
+
+                    if (collision) {
+                        // Check if collides with ramp shapes
+                        const collidesWithSquare = checkSquareCollision(rect);
+                        const collidesWithTriangle = checkTriangleCollision(rect);
+
+                        if (collidesWithSquare) {
+                            element.style.left = (rect.left + offsetX) + 'px';
+                            element.style.top = rect.top + 'px';
+                            updateRopePositions();
+                        } else if (collidesWithTriangle) {
+                            element.style.left = (rect.left + offsetX) + 'px';
+                            element.style.top = (rect.top + offsetY) + 'px';
+                            updateRopePositions();
+                        }
+                    }
+                });
+            }, 100);
+        }
+
+        function isColliding(rect1, rect2) {
+            return !(rect1.right < rect2.left ||
+                rect1.left > rect2.right ||
+                rect1.bottom < rect2.top ||
+                rect1.top > rect2.bottom);
+        }
+
+        function checkSquareCollision(rect) {
+            const squareRect = document.getElementById('newSquare').getBoundingClientRect();
+            return !(rect.right < squareRect.left ||
+                rect.left > squareRect.right ||
+                rect.bottom < squareRect.top ||
+                rect.top > squareRect.bottom);
+        }
+
+        function checkTriangleCollision(rect) {
+            const triangleRect = document.getElementById('newTriangle').getBoundingClientRect();
+            return !(rect.right < triangleRect.left ||
+                rect.left > triangleRect.right ||
+                rect.bottom < triangleRect.top ||
+                rect.top > triangleRect.bottom);
+        }
+
+        function startSimulation() {
+            if (!isRunning) {
+                isRunning = true;
+                moveComponents(20, 20); // Offset for x and y directions
+            }
+        }
+
+        function stopSimulation() {
+            clearInterval(intervalId);
+            isRunning = false;
+        }
+
+        function resizeObject(value, objectClass) {
+            const object = document.querySelector(`.${objectClass}`);
+            object.style.width = `${value}px`;
+            object.style.height = `${value}px`;
+            updateRopePositions();
+        }
+    </script>
+</body>
+
+</html>
